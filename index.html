@@ -720,8 +720,8 @@ var QRCode;
                     <label class="border border-slate-200 text-slate-600 px-3 py-2 rounded-lg font-medium text-sm hover:bg-slate-50 transition-colors shrink-0 flex items-center gap-1 cursor-pointer">
                         📂 导入备份 <input type="file" accept=".json" onchange="importData(event)" class="hidden">
                     </label>
-                    <button onclick="openAIAddModal()" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-xs hidden md:flex items-center gap-1 shrink-0 cursor-pointer">
-                        📷 智能添加
+                    <button onclick="openSmartMenu()" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-xs hidden md:flex items-center gap-1 shrink-0 cursor-pointer">
+                        🤖 智能功能
                     </button>
                     <button onclick="openModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-xs hidden md:flex items-center gap-1 shrink-0 cursor-pointer">
                         ➕ 添加新物品
@@ -763,8 +763,8 @@ var QRCode;
             <span class="text-xl">📷</span>
             <span class="text-[10px] font-medium">扫描</span>
         </button>
-        <button onclick="openAIAddModal()" class="flex flex-col items-center justify-center gap-0.5 px-3 py-1 text-violet-600 hover:text-violet-700">
-            <span class="text-xl">📷</span>
+        <button onclick="openSmartMenu()" class="flex flex-col items-center justify-center gap-0.5 px-3 py-1 text-violet-600 hover:text-violet-700">
+            <span class="text-xl">🤖</span>
             <span class="text-[10px] font-medium">智能</span>
         </button>
         <button onclick="openModal()" class="flex flex-col items-center justify-center gap-0.5 px-4 py-1 bg-blue-600 text-white rounded-2xl">
@@ -871,10 +871,10 @@ var QRCode;
 
                 <div class="grid grid-cols-3 gap-4">
                     <div class="col-span-2">
-                        <label class="block text-xs font-semibold text-slate-500 mb-1">商家</label>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">卖家（零售商）</label>
                         <div class="flex gap-1">
                             <select id="itemVendorSelect" class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-blue-500"></select>
-                            <input type="text" id="itemVendorInput" placeholder="输入商家名称" class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-sm hidden focus:outline-none focus:border-blue-500">
+                            <input type="text" id="itemVendorInput" placeholder="输入卖家名称" class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-sm hidden focus:outline-none focus:border-blue-500">
                             <button type="button" id="btnToggleVendor" onclick="toggleVendorInput()" class="text-xs px-2 bg-slate-200 rounded-lg border border-slate-300 hover:bg-slate-300">新建</button>
                         </div>
                     </div>
@@ -2078,7 +2078,7 @@ var QRCode;
 
         function initVendorSelect(selectedVendor = '') {
             const select = document.getElementById('itemVendorSelect');
-            select.innerHTML = '<option value="">-- 请选择商家 (可选) --</option>';
+            select.innerHTML = '<option value="">-- 请选择卖家 (可选) --</option>';
             getExistingVendors().forEach(v => {
                 const opt = document.createElement('option');
                 opt.value = v; opt.innerText = v;
@@ -2323,7 +2323,15 @@ var QRCode;
 
         function openModal(title = '添加新物件资料') {
             document.getElementById('modalTitle').innerText = title;
-            if (title === '添加新物件资料') { initModalCategories(); initLocationSelect(); initVendorSelect(); }
+            if (title === '添加新物件资料') {
+                document.getElementById('itemForm').reset();
+                document.getElementById('itemId').value = '';
+                currentUploadedFiles = [];
+                currentLocationImage = null;
+                renderLocationImagePreview();
+                renderFilesPreview();
+                initModalCategories(); initLocationSelect(); initVendorSelect();
+            }
             const modal = document.getElementById('itemModal');
             const container = document.getElementById('modalContainer');
             modal.classList.remove('hidden');
@@ -2580,7 +2588,7 @@ var QRCode;
                         <p class="text-emerald-600 font-bold">${price}</p>
                     </div>
                     ${item.date ? `<div class="bg-slate-50 rounded-lg p-2.5 space-y-0.5 col-span-2"><p class="text-slate-400 font-medium">购买日期</p><p class="text-slate-700 font-semibold">${item.date}</p></div>` : ''}
-                    ${item.vendor ? `<div class="bg-slate-50 rounded-lg p-2.5 space-y-0.5 col-span-2"><p class="text-slate-400 font-medium">商家</p><p class="text-slate-700 font-semibold">${item.vendor}</p></div>` : ''}
+                    ${item.vendor ? `<div class="bg-slate-50 rounded-lg p-2.5 space-y-0.5 col-span-2"><p class="text-slate-400 font-medium">卖家</p><p class="text-slate-700 font-semibold">${item.vendor}</p></div>` : ''}
                     ${item.remarks ? `<div class="bg-slate-50 rounded-lg p-2.5 space-y-0.5 col-span-2"><p class="text-slate-400 font-medium">备注</p><p class="text-slate-700">${item.remarks}</p></div>` : ''}
                 </div>
                 ${item.locationImage ? `
@@ -2630,6 +2638,241 @@ var QRCode;
             input.value = '';
             input.placeholder = '请输入你的 Gemini API Key';
             showToast('API Key 已清除');
+        }
+
+        // ── 智能功能菜单 ──────────────────────────────────────────────
+        function openSmartMenu() {
+            const key = localStorage.getItem('geminiApiKey');
+            if (!key) { openSettingsModal(); return; }
+            document.getElementById('smartMenuDrawer').classList.remove('hidden');
+        }
+        function closeSmartMenu() {
+            document.getElementById('smartMenuDrawer').classList.add('hidden');
+        }
+
+        // ── 以图搜物 ──────────────────────────────────────────────────
+        let isImageFiles = [null, null, null];
+
+        function openImageSearchModal() {
+            const key = localStorage.getItem('geminiApiKey');
+            if (!key) { openSettingsModal(); return; }
+            isImageFiles = [null, null, null];
+            document.getElementById('imgSearchErrorMsg').classList.add('hidden');
+            document.getElementById('imgSearchResultSection').classList.add('hidden');
+            document.getElementById('imgSearchLoadingSection').classList.add('hidden');
+            document.getElementById('imgSearchUploadSection').classList.remove('hidden');
+            document.getElementById('imgSearchResetBtn').classList.add('hidden');
+            const btn = document.getElementById('imgSearchBtn');
+            btn.disabled = true; btn.classList.remove('hidden');
+            btn.innerText = '🔍 开始搜索';
+            renderISSlots();
+            document.getElementById('imageSearchModal').classList.remove('hidden');
+        }
+
+        function closeImageSearchModal() {
+            document.getElementById('imageSearchModal').classList.add('hidden');
+            isImageFiles = [null, null, null];
+        }
+
+        function resetImageSearch() {
+            isImageFiles = [null, null, null];
+            document.getElementById('imgSearchErrorMsg').classList.add('hidden');
+            document.getElementById('imgSearchResultSection').classList.add('hidden');
+            document.getElementById('imgSearchLoadingSection').classList.add('hidden');
+            document.getElementById('imgSearchUploadSection').classList.remove('hidden');
+            document.getElementById('imgSearchResetBtn').classList.add('hidden');
+            const btn = document.getElementById('imgSearchBtn');
+            btn.disabled = true; btn.classList.remove('hidden');
+            btn.innerText = '🔍 开始搜索';
+            renderISSlots();
+        }
+
+        function renderISSlots() {
+            const hasImage = isImageFiles.some(Boolean);
+            const btn = document.getElementById('imgSearchBtn');
+            if (btn) btn.disabled = !hasImage;
+            for (let i = 0; i < 3; i++) {
+                const slot = document.getElementById('isSlot' + i);
+                if (!slot) continue;
+                if (isImageFiles[i]) {
+                    const url = URL.createObjectURL(isImageFiles[i]);
+                    slot.innerHTML = '<div class="relative w-full h-full"><img src="' + url + '" class="w-full h-full object-cover"><button type="button" onclick="removeISImage(' + i + ')" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold leading-none">&times;</button></div>';
+                } else {
+                    slot.innerHTML = '<div class="flex flex-col gap-1.5 items-center justify-center h-full p-2"><label class="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer hover:text-blue-600 bg-white border border-slate-200 px-2 py-1 rounded-lg w-full justify-center">📷 拍摄<input type="file" accept="image/*" capture="environment" onchange="handleISImageSelect(event,' + i + ')" class="hidden"></label><label class="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer hover:text-blue-600 bg-white border border-slate-200 px-2 py-1 rounded-lg w-full justify-center">🖼️ 相册<input type="file" accept="image/*" onchange="handleISImageSelect(event,' + i + ')" class="hidden"></label></div>';
+                }
+            }
+        }
+
+        function handleISImageSelect(event, idx) {
+            const file = event.target.files[0];
+            if (!file) return;
+            isImageFiles[idx] = file;
+            renderISSlots();
+        }
+
+        function removeISImage(idx) {
+            isImageFiles[idx] = null;
+            renderISSlots();
+        }
+
+        // 本地物品相似度评分
+        function scoreItemMatch(item, aiData) {
+            let score = 0;
+            const reasons = [];
+            const name = (item.name || '').toLowerCase();
+            const brand = (item.brand || '').toLowerCase();
+            const model = (item.model || '').toLowerCase();
+            const mainCat = (item.mainCategory || '').toLowerCase();
+            const subCat = (item.subCategory || '').toLowerCase();
+
+            const aiName = (aiData.name || '').toLowerCase();
+            const aiBrand = (aiData.brand || '').toLowerCase();
+            const aiModel = (aiData.model || '').toLowerCase();
+            const aiMain = (aiData.mainCategory || '').toLowerCase();
+            const aiSub = (aiData.subCategory || '').toLowerCase();
+            const aiKeywords = (aiData.keywords || []).map(k => k.toLowerCase());
+
+            // 品牌匹配（最高权重）
+            if (aiBrand && brand && brand === aiBrand) { score += 40; reasons.push('品牌相符'); }
+            else if (aiBrand && brand && (brand.includes(aiBrand) || aiBrand.includes(brand))) { score += 25; reasons.push('品牌相近'); }
+
+            // 型号匹配
+            if (aiModel && model && model === aiModel) { score += 50; reasons.push('型号相符'); }
+            else if (aiModel && model && (model.includes(aiModel) || aiModel.includes(model))) { score += 30; reasons.push('型号相近'); }
+
+            // 名称关键词匹配
+            if (aiName && name) {
+                const aiNameWords = aiName.split(/[\s，,、]+/).filter(w => w.length > 1);
+                let nameHits = 0;
+                for (const w of aiNameWords) {
+                    if (name.includes(w)) nameHits++;
+                }
+                if (nameHits > 0) {
+                    const nameScore = Math.min(30, nameHits * 15);
+                    score += nameScore;
+                    reasons.push('名称匹配');
+                }
+            }
+
+            // 关键词匹配
+            for (const kw of aiKeywords) {
+                if (kw.length < 2) continue;
+                if (name.includes(kw) || brand.includes(kw) || model.includes(kw)) {
+                    score += 10;
+                    if (!reasons.includes('关键词匹配')) reasons.push('关键词匹配');
+                }
+            }
+
+            // 分类匹配
+            if (aiMain && mainCat && (mainCat === aiMain || mainCat.includes(aiMain) || aiMain.includes(mainCat))) {
+                score += 15;
+                if (!reasons.includes('分类相符')) reasons.push('分类相符');
+            }
+            if (aiSub && subCat && (subCat === aiSub || subCat.includes(aiSub) || aiSub.includes(subCat))) {
+                score += 10;
+            }
+
+            return { score, reasons };
+        }
+
+        async function startImageSearch() {
+            const images = isImageFiles.filter(Boolean);
+            if (images.length === 0) return;
+            const key = localStorage.getItem('geminiApiKey');
+            if (!key) { closeImageSearchModal(); openSettingsModal(); return; }
+
+            // 切换到 loading 状态
+            document.getElementById('imgSearchUploadSection').classList.add('hidden');
+            document.getElementById('imgSearchLoadingSection').classList.remove('hidden');
+            document.getElementById('imgSearchErrorMsg').classList.add('hidden');
+            document.getElementById('imgSearchResultSection').classList.add('hidden');
+            document.getElementById('imgSearchBtn').classList.add('hidden');
+
+            try {
+                const prompt = '你是一个物品识别助手。请分析图片中的物品，提取以下搜索特征，以纯 JSON 格式回复，不要加任何说明文字或 markdown 代码块：{"name":"物品名称（中文）","brand":"品牌（保留原文，无法识别填null）","model":"型号（无法识别填null）","mainCategory":"主分类（中文，如电子设备、工具、文具等）","subCategory":"子分类（中文）","keywords":["搜索关键词1","搜索关键词2","搜索关键词3"]}。keywords 请提供3-5个最能描述该物品的关键词（中英文皆可）。无法判断的字段填null。';
+
+                const content = [{ type: 'text', text: prompt }];
+                for (const file of images) {
+                    const b64 = await compressImage(file);
+                    content.push({ type: 'image_url', image_url: { url: 'data:' + file.type + ';base64,' + b64 } });
+                }
+
+                const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+                    body: JSON.stringify({ model: 'gemini-3.1-flash-lite', messages: [{ role: 'user', content }], max_tokens: 500 })
+                });
+
+                if (!resp.ok) {
+                    let reason = '';
+                    if (resp.status === 429) reason = '❌ 搜索失败：已超出今日请求次数限制（RPD），请明天再试。';
+                    else if (resp.status === 401 || resp.status === 403) reason = '❌ 搜索失败：API Key 无效，请在设置中重新填写。';
+                    else reason = '❌ 搜索失败：API 请求错误（错误码 ' + resp.status + '），请检查网络后重试。';
+                    throw new Error(reason);
+                }
+
+                const result = await resp.json();
+                const text = result.choices?.[0]?.message?.content || '';
+                if (!text) throw new Error('❌ 搜索失败：模型没有返回任何内容，请重试。');
+
+                const cleaned = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+                let aiData;
+                try { aiData = JSON.parse(cleaned); }
+                catch (e) { throw new Error('❌ 搜索失败：无法解析识别结果，请重试。'); }
+
+                // 本地评分匹配
+                const scored = allItems
+                    .map(item => ({ item, ...scoreItemMatch(item, aiData) }))
+                    .filter(r => r.score >= 15)
+                    .sort((a, b) => b.score - a.score)
+                    .slice(0, 8);
+
+                // 显示结果
+                document.getElementById('imgSearchLoadingSection').classList.add('hidden');
+                document.getElementById('imgSearchResultSection').classList.remove('hidden');
+                document.getElementById('imgSearchResetBtn').classList.remove('hidden');
+
+                const headerEl = document.getElementById('imgSearchResultHeader');
+                const aiDesc = [aiData.name, aiData.brand, aiData.model].filter(Boolean).join(' · ');
+                headerEl.innerHTML = '<div class="bg-slate-50 rounded-lg p-3 mb-3"><p class="text-xs text-slate-400 mb-1">AI 识别为</p><p class="text-sm font-semibold text-slate-700">' + (aiDesc || '未能识别') + '</p><p class="text-xs text-slate-400 mt-0.5">' + (aiData.mainCategory || '') + (aiData.subCategory ? ' › ' + aiData.subCategory : '') + '</p></div>' +
+                    '<p class="text-xs font-semibold text-slate-500 mb-2">' + (scored.length > 0 ? '找到 ' + scored.length + ' 件相似物品' : '库存中未找到相似物品') + '</p>';
+
+                const listEl = document.getElementById('imgSearchResultList');
+                if (scored.length === 0) {
+                    listEl.innerHTML = '<div class="text-center py-6 text-slate-400"><p class="text-3xl mb-2">🔍</p><p class="text-sm">库存中没有与此物品相似的记录</p><p class="text-xs mt-1">可使用「智能识别添加」将此物品加入库存</p></div>';
+                } else {
+                    listEl.innerHTML = scored.map(({ item, score, reasons }) => {
+                        const firstImg = item.files?.find(f => f.type && f.type.startsWith('image/'));
+                        const imgHtml = firstImg
+                            ? '<img src="' + firstImg.url + '" class="w-14 h-14 object-cover rounded-lg shrink-0">'
+                            : '<div class="w-14 h-14 bg-slate-100 rounded-lg flex items-center justify-center text-xl shrink-0">📦</div>';
+                        const badgeColor = score >= 60 ? 'bg-green-100 text-green-700' : score >= 35 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500';
+                        const reasonTags = reasons.map(r => '<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">' + r + '</span>').join(' ');
+                        return '<div class="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl shadow-xs cursor-pointer hover:bg-slate-50 active:bg-slate-100" onclick="closeImageSearchModal(); setTimeout(()=>openDetailById(\'' + item.id + '\'),100)">' +
+                            imgHtml +
+                            '<div class="flex-1 min-w-0">' +
+                            '<div class="flex items-center gap-2 mb-0.5">' +
+                            '<p class="text-sm font-semibold text-slate-800 truncate">' + item.name + '</p>' +
+                            '<span class="text-[10px] font-medium px-1.5 py-0.5 rounded ' + badgeColor + ' shrink-0">' + score + '分</span>' +
+                            '</div>' +
+                            '<p class="text-xs text-slate-400 truncate">' + [item.brand, item.model].filter(Boolean).join(' · ') + (item.location ? ' · ' + item.location : '') + '</p>' +
+                            '<div class="flex gap-1 mt-1 flex-wrap">' + reasonTags + '</div>' +
+                            '</div>' +
+                            '<span class="text-slate-300 text-lg shrink-0">›</span>' +
+                            '</div>';
+                    }).join('');
+                }
+
+            } catch (err) {
+                document.getElementById('imgSearchLoadingSection').classList.add('hidden');
+                document.getElementById('imgSearchUploadSection').classList.remove('hidden');
+                const errEl = document.getElementById('imgSearchErrorMsg');
+                errEl.textContent = err.message || '❌ 搜索失败，请检查网络或重试。';
+                errEl.classList.remove('hidden');
+                document.getElementById('imgSearchBtn').classList.remove('hidden');
+                document.getElementById('imgSearchBtn').disabled = false;
+                document.getElementById('imgSearchBtn').innerText = '🔍 重试';
+            }
         }
 
         // ── 智能识别 ─────────────────────────────────────────────────
@@ -2756,7 +2999,7 @@ var QRCode;
             document.getElementById('aiErrorMsg').classList.add('hidden');
 
             try {
-                const prompt = '你是一个物品资产管理助手。请仔细分析用户提供的物品照片，照片中的文字可能是中文、英文、马来文或其他语言，请识别所有可见文字并提取以下信息。如果某张图片模糊、无关或无法识别，请直接忽略该图片，只根据其余可识别的图片提取信息。以纯 JSON 格式回复，不要加任何说明文字或 markdown 代码块：\n{"name":"物品名称（用中文）","brand":"品牌名称","model":"型号","mainCategory":"主分类建议（用中文，如：药品、电子设备、食品、工具等）","subCategory":"子分类建议（用中文）","vendor":"商家或制造商","price":数字或null,"date":"YYYY-MM-DD或null","remarks":"备注（用中文简短描述物品用途）"}\n无法从照片判断的字段填 null。品牌名称保留原文，物品名称和备注请用中文。始终以纯 JSON 格式回复，不允许附加任何说明文字。';
+                const prompt = '你是一个物品资产管理助手。请仔细分析用户提供的物品照片，照片中的文字可能是中文、英文、马来文或其他语言，请识别所有可见文字并提取以下信息。如果某张图片模糊、无关或无法识别，请直接忽略该图片，只根据其余可识别的图片提取信息。以纯 JSON 格式回复，不要加任何说明文字或 markdown 代码块：\n{"name":"物品名称（用中文）","brand":"品牌名称","model":"型号","mainCategory":"主分类建议（用中文，如：药品、电子设备、食品、工具等）","subCategory":"子分类建议（用中文）","vendor":"卖家（零售商，从哪里购买的）","price":数字或null,"date":"YYYY-MM-DD或null","remarks":"备注（用中文简短描述物品用途）"}\n无法从照片判断的字段填 null。品牌名称保留原文，物品名称和备注请用中文。始终以纯 JSON 格式回复，不允许附加任何说明文字。';
                 const content = [{ type: 'text', text: prompt }];
                 for (const file of images) {
                     const b64 = await compressImage(file);
@@ -3142,6 +3385,72 @@ var QRCode;
         </div>
     </div>
 
+
+    <!-- 智能功能菜单（底部抽屉） -->
+    <div id="smartMenuDrawer" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/40" onclick="closeSmartMenu()"></div>
+        <div class="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl">
+            <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mt-3 mb-1"></div>
+            <div class="px-5 pb-8 pt-2">
+                <h3 class="text-sm font-bold text-slate-500 mb-4 uppercase tracking-wide">🤖 智能功能</h3>
+                <div class="space-y-3">
+                    <button onclick="closeSmartMenu(); setTimeout(openAIAddModal,100);" class="w-full flex items-center gap-4 p-4 bg-violet-50 border border-violet-100 rounded-xl active:bg-violet-200 transition-colors text-left cursor-pointer">
+                        <div class="w-11 h-11 bg-violet-600 rounded-xl flex items-center justify-center text-xl shrink-0">📷</div>
+                        <div class="flex-1">
+                            <p class="text-sm font-semibold text-slate-800">智能识别添加</p>
+                            <p class="text-xs text-slate-500 mt-0.5">拍摄物品，AI 自动填写资料并添加</p>
+                        </div>
+                        <span class="text-slate-300 text-xl">›</span>
+                    </button>
+                    <button onclick="closeSmartMenu(); setTimeout(openImageSearchModal,100);" class="w-full flex items-center gap-4 p-4 bg-blue-50 border border-blue-100 rounded-xl active:bg-blue-200 transition-colors text-left cursor-pointer">
+                        <div class="w-11 h-11 bg-blue-600 rounded-xl flex items-center justify-center text-xl shrink-0">🔍</div>
+                        <div class="flex-1">
+                            <p class="text-sm font-semibold text-slate-800">以图搜物</p>
+                            <p class="text-xs text-slate-500 mt-0.5">拍摄物品，在库存中查找相似物品</p>
+                        </div>
+                        <span class="text-slate-300 text-xl">›</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 以图搜物弹窗 -->
+    <div id="imageSearchModal" class="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center hidden">
+        <div class="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full max-w-lg sm:mx-4 overflow-hidden flex flex-col max-h-[92dvh]">
+            <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 shrink-0">
+                <h3 class="text-base font-bold text-slate-900">🔍 以图搜物</h3>
+                <button onclick="closeImageSearchModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">&times;</button>
+            </div>
+            <div class="p-5 space-y-4 overflow-y-auto flex-1">
+                <div id="imgSearchUploadSection">
+                    <p class="text-xs text-slate-500 mb-3">拍摄或选择物品照片，AI 将识别特征并在库存中查找相似物品</p>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div id="isSlot0" class="h-28 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 overflow-hidden"></div>
+                        <div id="isSlot1" class="h-28 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 overflow-hidden"></div>
+                        <div id="isSlot2" class="h-28 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 overflow-hidden"></div>
+                    </div>
+                </div>
+                <div id="imgSearchLoadingSection" class="hidden text-center py-6">
+                    <div class="inline-block w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-3"></div>
+                    <p class="text-sm text-slate-600 font-medium">AI 正在识别物品特征…</p>
+                    <p class="text-xs text-slate-400 mt-1">请稍候</p>
+                </div>
+                <p id="imgSearchErrorMsg" class="text-xs text-red-500 hidden leading-relaxed"></p>
+                <div id="imgSearchResultSection" class="hidden">
+                    <div id="imgSearchResultHeader" class="mb-3"></div>
+                    <div id="imgSearchResultList" class="space-y-2"></div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-100 flex justify-between gap-2 bg-slate-50 shrink-0">
+                <button id="imgSearchResetBtn" onclick="resetImageSearch()" class="hidden px-4 py-1.5 border border-slate-200 text-xs text-slate-600 rounded-lg hover:bg-slate-50 cursor-pointer">重新搜索</button>
+                <div class="flex-1"></div>
+                <button onclick="closeImageSearchModal()" class="px-4 py-1.5 border border-slate-200 text-xs text-slate-600 rounded-lg hover:bg-slate-50 cursor-pointer">关闭</button>
+                <button id="imgSearchBtn" onclick="startImageSearch()" disabled class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg cursor-pointer transition-colors">🔍 开始搜索</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 智能识别弹窗 -->
     <div id="aiAddModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 overflow-hidden flex flex-col">
@@ -3207,7 +3516,7 @@ var QRCode;
     </div>
 
     <!-- 版本标注 -->
-    <div class="version-tag">Rev 10.2</div>
+    <div class="version-tag">Rev 10.4</div>
 
     <!-- 登录页 -->
     <div id="loginPage" class="fixed inset-0 z-[9999] flex items-center justify-center" style="background:linear-gradient(135deg,#1e40af,#1e293b)">
