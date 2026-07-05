@@ -931,6 +931,16 @@ var QRCode;
                     <textarea id="itemRemarks" rows="2" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 resize-none"></textarea>
                 </div>
 
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">关键字（方便日后搜索，逗号分隔或按 Enter 添加）</label>
+                    <div id="keywordsTagList" class="flex flex-wrap gap-1.5 mb-1.5"></div>
+                    <div class="flex gap-1.5">
+                        <input type="text" id="keywordInput" placeholder="输入关键字后按 Enter 或逗号添加" onkeydown="handleKeywordInputKeydown(event)" class="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                        <button type="button" id="btnAiKeywords" onclick="generateKeywordsAI()" class="text-xs px-3 py-1.5 bg-violet-50 text-violet-600 border border-violet-100 rounded-lg hover:bg-violet-100 cursor-pointer font-medium whitespace-nowrap">✨ AI 智能生成关键字</button>
+                    </div>
+                    <p id="keywordAiErrorMsg" class="text-xs text-red-500 mt-1 hidden"></p>
+                </div>
+
                 <div class="pt-3 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 -mx-5 -mb-5 p-4">
                     <button type="button" onclick="closeModal()" class="px-4 py-1.5 border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-100">取消</button>
                     <button type="submit" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium shadow-xs">保存物件</button>
@@ -1019,6 +1029,7 @@ var QRCode;
         let isNewPurUnit = false;
         const UNIT_PRESETS = ['个', '包', '公斤', '克', '米', '箱', '组', '件'];
         let currentLocationImage = null;
+        let currentKeywords = [];
         let mobileCatExpanded = null;
         let currentDetailItem = null;
         let activeItemForPrint = null;
@@ -1150,12 +1161,13 @@ var QRCode;
                 const matchMain = (filterMainCat === '全部' || item.mainCategory === filterMainCat);
                 const matchSub = (filterSubCat === '全部' || item.subCategory === filterSubCat);
                 const q = searchQuery.toLowerCase();
-                return matchMain && matchSub && (!q || 
+                return matchMain && matchSub && (!q ||
                     (item.name || '').toLowerCase().includes(q) ||
                     (item.itemCode || '').toLowerCase().includes(q) ||
                     (item.location || '').toLowerCase().includes(q) ||
                     (item.brand || '').toLowerCase().includes(q) ||
-                    (item.model || '').toLowerCase().includes(q));
+                    (item.model || '').toLowerCase().includes(q) ||
+                    (item.keywords || []).some(k => (k || '').toLowerCase().includes(q)));
             });
 
             if (filtered.length === 0) { emptyState.classList.remove('hidden'); return; }
@@ -2295,6 +2307,146 @@ var QRCode;
 
         function removePreviewFile(index) { currentUploadedFiles.splice(index, 1); renderFilesPreview(); }
 
+        // ── 关键字（比价用之外的搜索增强） ──────────────────────────────
+        function dedupeKeywords(arr) {
+            const seen = new Set();
+            const result = [];
+            (arr || []).forEach(k => {
+                const key = (k || '').toString().trim();
+                if (!key) return;
+                const lower = key.toLowerCase();
+                if (!seen.has(lower)) { seen.add(lower); result.push(key); }
+            });
+            return result;
+        }
+
+        function renderKeywordsTags() {
+            const container = document.getElementById('keywordsTagList');
+            if (!container) return;
+            container.innerHTML = currentKeywords.map((kw, i) => `
+                <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-100 text-xs px-2 py-0.5 rounded-full">
+                    ${kw}
+                    <button type="button" onclick="removeKeyword(${i})" class="text-blue-400 hover:text-blue-700 font-bold leading-none cursor-pointer">&times;</button>
+                </span>
+            `).join('');
+        }
+
+        function addKeywordsFromString(str) {
+            const added = str.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+            currentKeywords = dedupeKeywords([...currentKeywords, ...added]);
+            renderKeywordsTags();
+        }
+
+        function handleKeywordInputKeydown(e) {
+            if (e.key === 'Enter' || e.key === ',' || e.key === '，') {
+                e.preventDefault();
+                const input = document.getElementById('keywordInput');
+                if (input.value.trim()) {
+                    addKeywordsFromString(input.value);
+                    input.value = '';
+                }
+            }
+        }
+
+        function removeKeyword(index) {
+            currentKeywords.splice(index, 1);
+            renderKeywordsTags();
+        }
+
+        // 自动拆词：简单按常见分隔符切分，整词也保留，不做复杂 NLP 分词
+        function tokenizeKeywordsFromFields(fields) {
+            const words = [];
+            (fields || []).filter(Boolean).forEach(v => {
+                const val = String(v).trim();
+                if (!val) return;
+                words.push(val);
+                val.split(/[\s,，、\/\-·（）()]+/).map(s => s.trim()).filter(s => s.length > 0).forEach(w => words.push(w));
+            });
+            return words;
+        }
+
+        async function generateKeywordsAI() {
+            const key = localStorage.getItem('geminiApiKey');
+            if (!key) { openSettingsModal(); return; }
+
+            const btn = document.getElementById('btnAiKeywords');
+            const errEl = document.getElementById('keywordAiErrorMsg');
+            errEl.classList.add('hidden');
+            btn.disabled = true;
+            const originalText = btn.innerText;
+            btn.innerText = '生成中…';
+
+            try {
+                const mainCategory = isNewMainCat
+                    ? document.getElementById('itemMainCatInput').value.trim()
+                    : document.getElementById('itemMainCatSelect').value;
+                const subCategory = isNewSubCat
+                    ? document.getElementById('itemSubCatInput').value.trim()
+                    : document.getElementById('itemSubCatSelect').value;
+                const vendor = isNewVendor
+                    ? document.getElementById('itemVendorInput').value.trim()
+                    : document.getElementById('itemVendorSelect').value;
+
+                const fields = {
+                    名称: document.getElementById('itemName').value,
+                    品牌: document.getElementById('itemBrand').value,
+                    型号: document.getElementById('itemModel').value,
+                    主分类: mainCategory,
+                    子分类: subCategory,
+                    卖家: vendor,
+                    备注: document.getElementById('itemRemarks').value
+                };
+                const fieldsText = Object.entries(fields).filter(([, v]) => v).map(([k, v]) => `${k}：${v}`).join('，');
+
+                const imageUrls = [
+                    ...currentUploadedFiles.filter(f => f.type && f.type.startsWith('image/')).map(f => f.url),
+                    ...(currentLocationImage ? [currentLocationImage] : [])
+                ];
+
+                const existingHint = currentKeywords.length ? `已有关键字：${currentKeywords.join('、')}，请勿重复生成。` : '';
+                const prompt = `你是一个物品资产管理助手。请根据以下物品信息${imageUrls.length ? '和图片' : ''}，生成 3-6 个口语化、便于日后搜索的关键字（中文为主，可中英混合），例如物品的用途、使用者、存放场景等非正式说法。${existingHint}物品信息：${fieldsText || '（无文字信息，请参考图片）'}。以纯 JSON 格式回复，不要加任何说明文字或 markdown 代码块：{"keywords":["关键字1","关键字2"]}`;
+
+                const content = [{ type: 'text', text: prompt }];
+                imageUrls.forEach(url => content.push({ type: 'image_url', image_url: { url } }));
+
+                const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+                    body: JSON.stringify({ model: 'gemini-3.1-flash-lite', messages: [{ role: 'user', content }], max_tokens: 300 })
+                });
+
+                if (!resp.ok) {
+                    let reason = '';
+                    if (resp.status === 429) reason = '❌ 生成失败：已超出今日请求次数限制（RPD），请明天再试。';
+                    else if (resp.status === 401 || resp.status === 403) reason = '❌ 生成失败：API Key 无效或已过期，请在设置中重新填写。';
+                    else if (resp.status === 400) reason = '❌ 生成失败：请求格式错误（错误码 400）。';
+                    else if (resp.status >= 500) reason = `❌ 生成失败：Gemini 服务器暂时出错（错误码 ${resp.status}），请稍后重试。`;
+                    else reason = `❌ 生成失败：API 请求错误（错误码 ${resp.status}），请检查网络后重试。`;
+                    throw new Error(reason);
+                }
+
+                const result = await resp.json();
+                const text = result.choices?.[0]?.message?.content || '';
+                if (!text) throw new Error('❌ 生成失败：模型没有返回任何内容，请重试。');
+
+                const cleaned = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+                let data;
+                try { data = JSON.parse(cleaned); }
+                catch (e) { throw new Error('❌ 生成失败：模型返回的格式无法解析（非标准 JSON）。'); }
+
+                if (Array.isArray(data.keywords) && data.keywords.length > 0) {
+                    currentKeywords = dedupeKeywords([...currentKeywords, ...data.keywords]);
+                    renderKeywordsTags();
+                }
+            } catch (err) {
+                errEl.textContent = err.message || '❌ 生成失败，请检查网络或重试。';
+                errEl.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
+        }
+
         function saveItem(e) {
             e.preventDefault();
             if (!currentUser || !currentUserData) { showToast('请先登录'); return; }
@@ -2353,6 +2505,13 @@ var QRCode;
                 purchases: existingItem ? (existingItem.purchases || []) : [],
                 userId: currentUser.uid
             };
+
+            // 关键字：Tag 输入框内容（手动+AI）与自动拆词结果合并去重
+            const autoKeywords = tokenizeKeywordsFromFields([
+                itemData.name, itemData.brand, itemData.model,
+                itemData.mainCategory, itemData.subCategory, itemData.vendor
+            ]);
+            itemData.keywords = dedupeKeywords([...currentKeywords, ...autoKeywords]);
 
             // 新增物品时，若有填写采购资讯，自动建立首条采购记录
             if (!id) {
@@ -2430,6 +2589,8 @@ var QRCode;
 
             currentUploadedFiles = item.files ? [...item.files] : [];
             renderFilesPreview();
+            currentKeywords = item.keywords ? [...item.keywords] : [];
+            renderKeywordsTags();
             initModalCategories(item.mainCategory, item.subCategory);
             openModal('编辑物件资料');
         }
@@ -2447,6 +2608,10 @@ var QRCode;
                 document.getElementById('itemQuantity').value = 1;
                 initUnitSelect('个');
                 updateUnitPricePreview();
+                currentKeywords = [];
+                document.getElementById('keywordInput').value = '';
+                document.getElementById('keywordAiErrorMsg').classList.add('hidden');
+                renderKeywordsTags();
             }
             const modal = document.getElementById('itemModal');
             const container = document.getElementById('modalContainer');
@@ -2462,6 +2627,7 @@ var QRCode;
                 modal.classList.add('hidden'); document.getElementById('itemForm').reset();
                 document.getElementById('itemId').value = ''; currentUploadedFiles = [];
                 currentLocationImage = null; renderLocationImagePreview();
+                currentKeywords = []; renderKeywordsTags();
                 if (isNewMainCat) toggleMainInput();
                 if (isNewSubCat) toggleSubInput();
                 if (isNewLocation) toggleLocationInput();
@@ -3116,7 +3282,7 @@ var QRCode;
             document.getElementById('aiErrorMsg').classList.add('hidden');
 
             try {
-                const prompt = '你是一个物品资产管理助手。请仔细分析用户提供的物品照片，照片中的文字可能是中文、英文、马来文或其他语言，请识别所有可见文字并提取以下信息。如果某张图片模糊、无关或无法识别，请直接忽略该图片，只根据其余可识别的图片提取信息。以纯 JSON 格式回复，不要加任何说明文字或 markdown 代码块：\n{"name":"物品名称（用中文）","brand":"品牌名称","model":"型号","mainCategory":"主分类建议（用中文，如：药品、电子设备、食品、工具等）","subCategory":"子分类建议（用中文）","vendor":"卖家（零售商，从哪里购买的）","price":数字或null,"date":"YYYY-MM-DD或null","remarks":"备注（用中文简短描述物品用途）"}\n无法从照片判断的字段填 null。品牌名称保留原文，物品名称和备注请用中文。始终以纯 JSON 格式回复，不允许附加任何说明文字。';
+                const prompt = '你是一个物品资产管理助手。请仔细分析用户提供的物品照片，照片中的文字可能是中文、英文、马来文或其他语言，请识别所有可见文字并提取以下信息。如果某张图片模糊、无关或无法识别，请直接忽略该图片，只根据其余可识别的图片提取信息。以纯 JSON 格式回复，不要加任何说明文字或 markdown 代码块：\n{"name":"物品名称（用中文）","brand":"品牌名称","model":"型号","mainCategory":"主分类建议（用中文，如：药品、电子设备、食品、工具等）","subCategory":"子分类建议（用中文）","vendor":"卖家（零售商，从哪里购买的）","price":数字或null,"date":"YYYY-MM-DD或null","remarks":"备注（用中文简短描述物品用途）","keywords":["口语化搜索关键字1","关键字2"]}\n无法从照片判断的字段填 null。品牌名称保留原文，物品名称和备注请用中文。keywords 请额外提供 3-6 个口语化、便于日后搜索的关键字（如用途、使用场景等非正式说法），中文为主。始终以纯 JSON 格式回复，不允许附加任何说明文字。';
                 const content = [{ type: 'text', text: prompt }];
                 for (const file of images) {
                     const b64 = await compressImage(file);
@@ -3362,6 +3528,12 @@ var QRCode;
                     if (!isNewVendor) toggleVendorInput();
                     document.getElementById('itemVendorInput').value = data.vendor;
                 }
+            }
+
+            // keywords（AI 拍照识别搭便车生成，不额外耗 RPD）
+            if (Array.isArray(data.keywords) && data.keywords.length > 0) {
+                currentKeywords = dedupeKeywords([...currentKeywords, ...data.keywords]);
+                renderKeywordsTags();
             }
         }
 
@@ -3656,7 +3828,7 @@ var QRCode;
     </div>
 
     <!-- 版本标注 -->
-    <div class="version-tag">Rev 10.6</div>
+    <div class="version-tag">Rev 10.7</div>
 
     <!-- 登录页 -->
     <div id="loginPage" class="fixed inset-0 z-[9999] flex items-center justify-center" style="background:linear-gradient(135deg,#1e40af,#1e293b)">
