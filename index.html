@@ -889,6 +889,24 @@ var QRCode;
                     </div>
                 </div>
 
+                <div class="grid grid-cols-3 gap-4 items-start">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">数量</label>
+                        <input type="number" id="itemQuantity" step="0.01" min="0" value="1" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">单位</label>
+                        <div class="flex gap-1">
+                            <select id="itemUnitSelect" class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-blue-500"></select>
+                            <input type="text" id="itemUnitInput" placeholder="输入单位" class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-sm hidden focus:outline-none focus:border-blue-500">
+                            <button type="button" id="btnToggleUnit" onclick="toggleUnitInput()" class="text-xs px-2 bg-slate-200 rounded-lg border border-slate-300 hover:bg-slate-300">新建</button>
+                        </div>
+                    </div>
+                    <div class="flex items-end pb-1.5">
+                        <p id="itemUnitPricePreview" class="text-xs text-slate-500 font-medium">单价：RM 0.00 / 个</p>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 gap-4">
                     <div>
                         <label class="block text-xs font-semibold text-slate-500 mb-1">购买日期</label>
@@ -997,6 +1015,9 @@ var QRCode;
         let isNewSubCat = false;
         let isNewVendor = false;
         let isNewLocation = false;
+        let isNewUnit = false;
+        let isNewPurUnit = false;
+        const UNIT_PRESETS = ['个', '包', '公斤', '克', '米', '箱', '组', '件'];
         let currentLocationImage = null;
         let mobileCatExpanded = null;
         let currentDetailItem = null;
@@ -2095,6 +2116,88 @@ var QRCode;
             }
         }
 
+        function getExistingUnits() {
+            const units = new Set(UNIT_PRESETS);
+            allItems.forEach(item => {
+                if (item.unit) units.add(item.unit);
+                (item.purchases || []).forEach(p => { if (p.unit) units.add(p.unit); });
+            });
+            return Array.from(units);
+        }
+
+        function populateUnitSelect(selectEl, selectedUnit) {
+            selectEl.innerHTML = '';
+            getExistingUnits().forEach(u => {
+                const opt = document.createElement('option');
+                opt.value = u; opt.innerText = u;
+                selectEl.appendChild(opt);
+            });
+            selectEl.value = selectedUnit || '个';
+        }
+
+        function computeUnitPrice(price, quantity) {
+            const p = parseFloat(price);
+            if (isNaN(p)) return null;
+            let q = parseFloat(quantity);
+            if (!q || q <= 0) q = 1;
+            return Math.round((p / q) * 100) / 100;
+        }
+
+        function initUnitSelect(selectedUnit = '个') {
+            populateUnitSelect(document.getElementById('itemUnitSelect'), selectedUnit);
+        }
+
+        function toggleUnitInput() {
+            isNewUnit = !isNewUnit;
+            const input = document.getElementById('itemUnitInput');
+            const select = document.getElementById('itemUnitSelect');
+            const btn = document.getElementById('btnToggleUnit');
+            if (isNewUnit) {
+                input.classList.remove('hidden'); select.classList.add('hidden'); btn.innerText = "选择"; input.value = '';
+            } else {
+                input.classList.add('hidden'); select.classList.remove('hidden'); btn.innerText = "新建";
+            }
+            updateUnitPricePreview();
+        }
+
+        function updateUnitPricePreview() {
+            const price = document.getElementById('itemPrice').value;
+            const qty = document.getElementById('itemQuantity').value;
+            const unit = (isNewUnit ? document.getElementById('itemUnitInput').value.trim() : document.getElementById('itemUnitSelect').value) || '个';
+            const up = computeUnitPrice(price, qty);
+            document.getElementById('itemUnitPricePreview').textContent = `单价：RM ${(up !== null ? up : 0).toFixed(2)} / ${unit}`;
+        }
+
+        function initPurUnitSelect(selectedUnit = '个') {
+            populateUnitSelect(document.getElementById('purUnitSelect'), selectedUnit);
+        }
+
+        function togglePurUnitInput() {
+            isNewPurUnit = !isNewPurUnit;
+            const input = document.getElementById('purUnitInput');
+            const select = document.getElementById('purUnitSelect');
+            const btn = document.getElementById('btnTogglePurUnit');
+            if (isNewPurUnit) {
+                input.classList.remove('hidden'); select.classList.add('hidden'); btn.innerText = "选择"; input.value = '';
+            } else {
+                input.classList.add('hidden'); select.classList.remove('hidden'); btn.innerText = "新建";
+            }
+            updatePurUnitPricePreview();
+        }
+
+        function updatePurUnitPricePreview() {
+            const price = document.getElementById('purPrice').value;
+            const qty = document.getElementById('purQty').value;
+            const unit = (isNewPurUnit ? document.getElementById('purUnitInput').value.trim() : document.getElementById('purUnitSelect').value) || '个';
+            const up = computeUnitPrice(price, qty);
+            document.getElementById('purUnitPricePreview').textContent = `单价：RM ${(up !== null ? up : 0).toFixed(2)} / ${unit}`;
+        }
+
+        document.getElementById('itemPrice').addEventListener('input', updateUnitPricePreview);
+        document.getElementById('itemQuantity').addEventListener('input', updateUnitPricePreview);
+        document.getElementById('itemUnitSelect').addEventListener('change', updateUnitPricePreview);
+        document.getElementById('itemUnitInput').addEventListener('input', updateUnitPricePreview);
+
         async function handleLocationImageSelect(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -2224,6 +2327,12 @@ var QRCode;
             const location = isNewLocation
                 ? document.getElementById('locationInput').value.trim()
                 : document.getElementById('locationSelect').value;
+            const unit = (isNewUnit
+                ? document.getElementById('itemUnitInput').value.trim()
+                : document.getElementById('itemUnitSelect').value) || '个';
+            const quantity = document.getElementById('itemQuantity').value
+                ? parseFloat(document.getElementById('itemQuantity').value)
+                : 1;
             const existingItem = id ? allItems.find(i => i.id === id) : null;
             const itemData = {
                 name: document.getElementById('itemName').value,
@@ -2237,6 +2346,8 @@ var QRCode;
                 vendor: vendor || '',
                 date: document.getElementById('itemDate').value,
                 price: document.getElementById('itemPrice').value ? parseFloat(document.getElementById('itemPrice').value) : null,
+                quantity: quantity || 1,
+                unit,
                 remarks: document.getElementById('itemRemarks').value,
                 files: currentUploadedFiles,
                 purchases: existingItem ? (existingItem.purchases || []) : [],
@@ -2252,7 +2363,8 @@ var QRCode;
                         date: itemData.date || '',
                         vendor: itemData.vendor || '',
                         price: itemData.price,
-                        quantity: 1,
+                        quantity: itemData.quantity || 1,
+                        unit: itemData.unit || '个',
                         remarks: ''
                     }];
                 }
@@ -2288,7 +2400,12 @@ var QRCode;
             document.getElementById('itemModel').value = item.model;
             document.getElementById('itemDate').value = item.date;
             document.getElementById('itemPrice').value = item.price;
+            document.getElementById('itemQuantity').value = item.quantity || 1;
             document.getElementById('itemRemarks').value = item.remarks;
+
+            if (isNewUnit) toggleUnitInput();
+            initUnitSelect(item.unit || '个');
+            updateUnitPricePreview();
 
             currentLocationImage = item.locationImage || null;
             renderLocationImagePreview();
@@ -2327,6 +2444,9 @@ var QRCode;
                 renderLocationImagePreview();
                 renderFilesPreview();
                 initModalCategories(); initLocationSelect(); initVendorSelect();
+                document.getElementById('itemQuantity').value = 1;
+                initUnitSelect('个');
+                updateUnitPricePreview();
             }
             const modal = document.getElementById('itemModal');
             const container = document.getElementById('modalContainer');
@@ -2346,6 +2466,7 @@ var QRCode;
                 if (isNewSubCat) toggleSubInput();
                 if (isNewLocation) toggleLocationInput();
                 if (isNewVendor) toggleVendorInput();
+                if (isNewUnit) toggleUnitInput();
             }, 200);
         }
 
@@ -3082,14 +3203,20 @@ var QRCode;
 
             const rows = purchases.map(p => {
                 const priceStr = p.price != null ? 'RM ' + parseFloat(p.price).toFixed(2) : '—';
-                const qtyStr = p.quantity ? ' × ' + p.quantity : '';
+                const unit = p.unit || '个';
+                let detailStr = '';
+                if (p.price != null) {
+                    const qty = (p.quantity && p.quantity > 0) ? p.quantity : 1;
+                    const up = Math.round((parseFloat(p.price) / qty) * 100) / 100;
+                    detailStr = `（${p.quantity ? p.quantity : 1}${unit}，单价 RM ${up.toFixed(2)}/${unit}）`;
+                }
                 const remarksHtml = p.remarks ? `<p class="text-slate-400 mt-0.5">${p.remarks}</p>` : '';
                 return `
                     <div class="bg-slate-50 border border-slate-100 rounded-lg p-2.5 text-xs">
                         <div class="flex justify-between items-start">
                             <div>
                                 <p class="font-semibold text-slate-700">${p.date || '—'} · ${p.vendor || '—'}</p>
-                                <p class="text-emerald-600 font-bold mt-0.5">${priceStr}${qtyStr}</p>
+                                <p class="text-emerald-600 font-bold mt-0.5">${priceStr}${detailStr}</p>
                                 ${remarksHtml}
                             </div>
                             <button onclick="confirmDeletePurchase('${item.id}','${p.id}')" class="text-red-400 hover:text-red-600 ml-2 shrink-0 cursor-pointer" title="删除此记录">🗑️</button>
@@ -3114,11 +3241,15 @@ var QRCode;
             document.getElementById('purVendor').value = '';
             document.getElementById('purQty').value = '';
             document.getElementById('purRemarks').value = '';
+            if (isNewPurUnit) togglePurUnitInput();
+            initPurUnitSelect('个');
+            updatePurUnitPricePreview();
             document.getElementById('purchaseFormModal').classList.remove('hidden');
         }
 
         function closePurchaseForm() {
             document.getElementById('purchaseFormModal').classList.add('hidden');
+            if (isNewPurUnit) togglePurUnitInput();
         }
 
         function savePurchaseRecord() {
@@ -3128,12 +3259,16 @@ var QRCode;
             if (!date || price === '') { showToast('请填写日期和单价'); return; }
 
             const qtyVal = document.getElementById('purQty').value;
+            const unit = (isNewPurUnit
+                ? document.getElementById('purUnitInput').value.trim()
+                : document.getElementById('purUnitSelect').value) || '个';
             const newPurchase = {
                 id: 'pur_' + Date.now(),
                 date,
                 vendor: document.getElementById('purVendor').value.trim(),
                 price: parseFloat(price),
-                quantity: qtyVal ? parseInt(qtyVal, 10) : null,
+                quantity: qtyVal ? parseFloat(qtyVal) : null,
+                unit,
                 remarks: document.getElementById('purRemarks').value.trim()
             };
 
@@ -3486,7 +3621,7 @@ var QRCode;
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-slate-500 mb-1">单价 (RM) *</label>
-                        <input type="number" id="purPrice" step="0.01" min="0" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                        <input type="number" id="purPrice" step="0.01" min="0" oninput="updatePurUnitPricePreview()" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
                     </div>
                 </div>
                 <div>
@@ -3496,13 +3631,22 @@ var QRCode;
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-semibold text-slate-500 mb-1">数量</label>
-                        <input type="number" id="purQty" min="1" step="1" placeholder="1" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                        <input type="number" id="purQty" min="0" step="0.01" placeholder="1" oninput="updatePurUnitPricePreview()" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-slate-500 mb-1">备注</label>
-                        <input type="text" id="purRemarks" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">单位</label>
+                        <div class="flex gap-1">
+                            <select id="purUnitSelect" onchange="updatePurUnitPricePreview()" class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-blue-500"></select>
+                            <input type="text" id="purUnitInput" placeholder="输入单位" oninput="updatePurUnitPricePreview()" class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-sm hidden focus:outline-none focus:border-blue-500">
+                            <button type="button" id="btnTogglePurUnit" onclick="togglePurUnitInput()" class="text-xs px-2 bg-slate-200 rounded-lg border border-slate-300 hover:bg-slate-300">新建</button>
+                        </div>
                     </div>
                 </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">备注</label>
+                    <input type="text" id="purRemarks" class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <p id="purUnitPricePreview" class="text-xs text-slate-500 font-medium">单价：RM 0.00 / 个</p>
             </div>
             <div class="p-3 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
                 <button onclick="closePurchaseForm()" class="px-4 py-1.5 border border-slate-200 text-xs text-slate-600 rounded-lg hover:bg-slate-50 cursor-pointer">取消</button>
@@ -3512,7 +3656,7 @@ var QRCode;
     </div>
 
     <!-- 版本标注 -->
-    <div class="version-tag">Rev 10.5</div>
+    <div class="version-tag">Rev 10.6</div>
 
     <!-- 登录页 -->
     <div id="loginPage" class="fixed inset-0 z-[9999] flex items-center justify-center" style="background:linear-gradient(135deg,#1e40af,#1e293b)">
