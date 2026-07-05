@@ -2912,6 +2912,9 @@ var QRCode;
 
         function closeItemDetailModal() {
             document.getElementById('itemDetailModal').classList.add('hidden');
+            // 用户看完详情页没有添加采购记录就直接关闭：清空待处理的 AI 识别资料，避免误带入下次操作
+            pendingAIData = null;
+            pendingDuplicateItem = null;
         }
 
         // ── 设置弹窗 ─────────────────────────────────────────────────
@@ -3406,32 +3409,31 @@ var QRCode;
 
         function chooseAddPurchaseToExisting() {
             const item = pendingDuplicateItem;
-            const data = pendingAIData;
             closeDuplicateWarning();
             closeAIAddModal();
-            pendingAIData = null;
-            pendingDuplicateItem = null;
-            if (!item) return;
+            if (!item) { pendingAIData = null; pendingDuplicateItem = null; return; }
+            // pendingAIData 先不清空，带到详情页；用户点「+ 添加采购记录」时由 openPurchaseForm 预填
+            openItemDetailModal(item);
+        }
 
-            openPurchaseForm(item.id);
-            if (data) {
-                document.getElementById('purVendor').value = data.vendor || '';
-                if (data.price !== null && data.price !== undefined) document.getElementById('purPrice').value = data.price;
-                if (data.date) document.getElementById('purDate').value = data.date;
-                if (data.quantity !== null && data.quantity !== undefined) document.getElementById('purQty').value = data.quantity;
-                if (data.unit) {
-                    const units = getExistingUnits();
-                    const matchedUnit = units.find(u => u.toLowerCase() === (data.unit || '').toLowerCase());
-                    if (matchedUnit) {
-                        if (isNewPurUnit) togglePurUnitInput();
-                        document.getElementById('purUnitSelect').value = matchedUnit;
-                    } else {
-                        if (!isNewPurUnit) togglePurUnitInput();
-                        document.getElementById('purUnitInput').value = data.unit;
-                    }
+        // 把 AI 识别出的卖家/价格/日期/数量/单位预填进采购记录表单（Rev 10.10 首次识别跳转 / Rev 10.11 详情页确认后跳转，共用）
+        function applyPendingAIDataToPurchaseForm(data) {
+            document.getElementById('purVendor').value = data.vendor || '';
+            if (data.price !== null && data.price !== undefined) document.getElementById('purPrice').value = data.price;
+            if (data.date) document.getElementById('purDate').value = data.date;
+            if (data.quantity !== null && data.quantity !== undefined) document.getElementById('purQty').value = data.quantity;
+            if (data.unit) {
+                const units = getExistingUnits();
+                const matchedUnit = units.find(u => u.toLowerCase() === (data.unit || '').toLowerCase());
+                if (matchedUnit) {
+                    if (isNewPurUnit) togglePurUnitInput();
+                    document.getElementById('purUnitSelect').value = matchedUnit;
+                } else {
+                    if (!isNewPurUnit) togglePurUnitInput();
+                    document.getElementById('purUnitInput').value = data.unit;
                 }
-                updatePurUnitPricePreview();
             }
+            updatePurUnitPricePreview();
         }
 
         function chooseAddAsNewFromDuplicate() {
@@ -3511,6 +3513,13 @@ var QRCode;
             initPurUnitSelect('个');
             updatePurUnitPricePreview();
             document.getElementById('purchaseFormModal').classList.remove('hidden');
+
+            // 若本次是从「智能识别添加」的重复物品确认流程进来，且打开的正是那件候选物品，预填 AI 识别资料
+            if (pendingAIData && pendingDuplicateItem && pendingDuplicateItem.id === itemId) {
+                applyPendingAIDataToPurchaseForm(pendingAIData);
+                pendingAIData = null;
+                pendingDuplicateItem = null;
+            }
         }
 
         function closePurchaseForm() {
@@ -3947,7 +3956,7 @@ var QRCode;
     </div>
 
     <!-- 版本标注 -->
-    <div class="version-tag">Rev 10.10</div>
+    <div class="version-tag">Rev 10.11</div>
 
     <!-- 登录页 -->
     <div id="loginPage" class="fixed inset-0 z-[9999] flex items-center justify-center" style="background:linear-gradient(135deg,#1e40af,#1e293b)">
