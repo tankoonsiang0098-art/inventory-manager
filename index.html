@@ -1030,6 +1030,8 @@ var QRCode;
         const UNIT_PRESETS = ['个', '包', '公斤', '克', '米', '箱', '组', '件'];
         let currentLocationImage = null;
         let currentKeywords = [];
+        let pendingAIData = null;
+        let pendingDuplicateItem = null;
         let mobileCatExpanded = null;
         let currentDetailItem = null;
         let activeItemForPrint = null;
@@ -3305,7 +3307,7 @@ var QRCode;
             document.getElementById('aiErrorMsg').classList.add('hidden');
 
             try {
-                const prompt = '你是一个物品资产管理助手。请仔细分析用户提供的物品照片，照片中的文字可能是中文、英文、马来文或其他语言，请识别所有可见文字并提取以下信息。如果某张图片模糊、无关或无法识别，请直接忽略该图片，只根据其余可识别的图片提取信息。以纯 JSON 格式回复，不要加任何说明文字或 markdown 代码块：\n{"name":"物品名称（用中文）","brand":"品牌名称","model":"型号","mainCategory":"主分类建议（用中文，如：药品、电子设备、食品、工具等）","subCategory":"子分类建议（用中文）","vendor":"卖家（零售商，从哪里购买的）","price":数字或null,"date":"YYYY-MM-DD或null","remarks":"备注（用中文简短描述物品用途）","keywords":["口语化搜索关键字1","关键字2"]}\n无法从照片判断的字段填 null。品牌名称保留原文，物品名称和备注请用中文。keywords 请额外提供 3-6 个口语化、便于日后搜索的关键字（如用途、使用场景等非正式说法），中文为主。始终以纯 JSON 格式回复，不允许附加任何说明文字。';
+                const prompt = '你是一个物品资产管理助手。请仔细分析用户提供的物品照片，照片中的文字可能是中文、英文、马来文或其他语言，请识别所有可见文字并提取以下信息。如果某张图片模糊、无关或无法识别，请直接忽略该图片，只根据其余可识别的图片提取信息。以纯 JSON 格式回复，不要加任何说明文字或 markdown 代码块：\n{"name":"物品名称（用中文）","brand":"品牌名称","model":"型号","mainCategory":"主分类建议（用中文，如：药品、电子设备、食品、工具等）","subCategory":"子分类建议（用中文）","vendor":"卖家（零售商，从哪里购买的）","price":数字或null,"date":"YYYY-MM-DD或null","quantity":数字或null,"unit":"单位（如个/包/公斤/箱等，无法判断填null）","remarks":"备注（用中文简短描述物品用途）","keywords":["口语化搜索关键字1","关键字2"]}\n无法从照片判断的字段填 null。品牌名称保留原文，物品名称和备注请用中文。keywords 请额外提供 3-6 个口语化、便于日后搜索的关键字（如用途、使用场景等非正式说法），中文为主。始终以纯 JSON 格式回复，不允许附加任何说明文字。';
                 const content = [{ type: 'text', text: prompt }];
                 for (const file of images) {
                     const b64 = await compressImage(file);
@@ -3353,9 +3355,9 @@ var QRCode;
                     throw new Error('❌ 识别失败：模型返回的格式无法解析（非标准 JSON）。可能是图片内容过于复杂，建议减少图片数量或使用更清晰的照片重试。');
                 }
 
-                closeAIAddModal();
-                openModal('添加新物件资料');
-                setTimeout(() => prefillFormFromAI(data), 80);
+                btn.disabled = false;
+                btn.innerText = '🔍 开始识别';
+                checkDuplicateAndProceed(data);
 
             } catch (err) {
                 const errEl = document.getElementById('aiErrorMsg');
@@ -3364,6 +3366,80 @@ var QRCode;
                 btn.disabled = false;
                 btn.innerText = '🔍 开始识别';
             }
+        }
+
+        // ── 智能识别重复物品检测（Rev 10.10，仅拍照识别路径，本地打分不额外耗 RPD） ──
+        function checkDuplicateAndProceed(data) {
+            const myItems = currentUser ? allItems.filter(i => i.userId === currentUser.uid) : [];
+            let best = null;
+            myItems.forEach(item => {
+                const { score, reasons } = scoreItemMatch(item, data);
+                if (!best || score > best.score) best = { item, score, reasons };
+            });
+            if (best && best.score >= 15) {
+                pendingAIData = data;
+                pendingDuplicateItem = best.item;
+                showDuplicateWarning(best.item);
+            } else {
+                proceedAsNewItemFromAI(data);
+            }
+        }
+
+        function proceedAsNewItemFromAI(data) {
+            closeAIAddModal();
+            openModal('添加新物件资料');
+            setTimeout(() => prefillFormFromAI(data), 80);
+        }
+
+        function showDuplicateWarning(item) {
+            const spec = [item.mainCategory, item.subCategory].filter(Boolean).join(' › ') || '—';
+            document.getElementById('duplicateWarningContent').innerHTML = `
+                <p class="text-sm text-slate-700">发现相似物品：<strong>${item.name || '—'}</strong>（${item.itemCode || '未分配'}），是同一件东西吗？</p>
+                <p class="text-xs text-slate-400 mt-1.5">${spec}${item.location ? ' · ' + item.location : ''}</p>
+            `;
+            document.getElementById('duplicateWarningModal').classList.remove('hidden');
+        }
+
+        function closeDuplicateWarning() {
+            document.getElementById('duplicateWarningModal').classList.add('hidden');
+        }
+
+        function chooseAddPurchaseToExisting() {
+            const item = pendingDuplicateItem;
+            const data = pendingAIData;
+            closeDuplicateWarning();
+            closeAIAddModal();
+            pendingAIData = null;
+            pendingDuplicateItem = null;
+            if (!item) return;
+
+            openPurchaseForm(item.id);
+            if (data) {
+                document.getElementById('purVendor').value = data.vendor || '';
+                if (data.price !== null && data.price !== undefined) document.getElementById('purPrice').value = data.price;
+                if (data.date) document.getElementById('purDate').value = data.date;
+                if (data.quantity !== null && data.quantity !== undefined) document.getElementById('purQty').value = data.quantity;
+                if (data.unit) {
+                    const units = getExistingUnits();
+                    const matchedUnit = units.find(u => u.toLowerCase() === (data.unit || '').toLowerCase());
+                    if (matchedUnit) {
+                        if (isNewPurUnit) togglePurUnitInput();
+                        document.getElementById('purUnitSelect').value = matchedUnit;
+                    } else {
+                        if (!isNewPurUnit) togglePurUnitInput();
+                        document.getElementById('purUnitInput').value = data.unit;
+                    }
+                }
+                updatePurUnitPricePreview();
+            }
+        }
+
+        function chooseAddAsNewFromDuplicate() {
+            const data = pendingAIData;
+            closeDuplicateWarning();
+            pendingAIData = null;
+            pendingDuplicateItem = null;
+            proceedAsNewItemFromAI(data);
         }
 
         // ── 采购记录功能 ──────────────────────────────────────────────
@@ -3805,6 +3881,21 @@ var QRCode;
         </div>
     </div>
 
+    <!-- 智能识别：疑似重复物品提示 -->
+    <div id="duplicateWarningModal" class="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center hidden">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            <div class="p-4 border-b border-slate-200 bg-amber-50">
+                <h3 class="text-sm font-bold text-amber-700">🔍 发现相似物品</h3>
+            </div>
+            <div class="p-4" id="duplicateWarningContent"></div>
+            <div class="p-3 border-t border-slate-100 flex flex-col gap-2 bg-slate-50">
+                <button onclick="chooseAddPurchaseToExisting()" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg cursor-pointer">➕ 添加采购记录到这件</button>
+                <button onclick="chooseAddAsNewFromDuplicate()" class="w-full py-2 border border-slate-200 text-xs text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer">🆕 仍然新增为独立物品</button>
+                <button onclick="chooseAddAsNewFromDuplicate()" class="w-full py-1.5 text-xs text-slate-400 hover:text-slate-600 cursor-pointer">✕ 关闭</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 添加采购记录弹窗 -->
     <div id="purchaseFormModal" class="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center hidden">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
@@ -3856,7 +3947,7 @@ var QRCode;
     </div>
 
     <!-- 版本标注 -->
-    <div class="version-tag">Rev 10.9</div>
+    <div class="version-tag">Rev 10.10</div>
 
     <!-- 登录页 -->
     <div id="loginPage" class="fixed inset-0 z-[9999] flex items-center justify-center" style="background:linear-gradient(135deg,#1e40af,#1e293b)">
