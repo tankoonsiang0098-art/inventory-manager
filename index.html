@@ -4,8 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>家庭/办公室物品数字化管理系统 (二维码标签版)</title>
-    <link rel="manifest">
+    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
+    <!-- iOS PWA 支持（iOS 不支持自动安装横幅，需用户手动"添加到主屏幕"） -->
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="物品管理">
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -971,23 +976,14 @@ var QRCode;
         // }
         // ====================================================
 
-        // PWA manifest 动态注入
-        document.addEventListener('DOMContentLoaded', function() {
-            const manifestData = {
-                name: "物品管理系统",
-                short_name: "物品管理",
-                start_url: ".",
-                display: "standalone",
-                theme_color: "#2563eb",
-                background_color: "#ffffff",
-                icons: []
-            };
-            const blob = new Blob([JSON.stringify(manifestData)],
-                {type: 'application/manifest+json'});
-            const manifestURL = URL.createObjectURL(blob);
-            document.querySelector('link[rel="manifest"]')
-                .setAttribute('href', manifestURL);
-        });
+        // 注册 Service Worker（PWA 可安装化必要条件，不做离线缓存）
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('sw.js').catch(function (err) {
+                    console.warn('Service Worker 注册失败：', err);
+                });
+            });
+        }
 
         let allItems = [];
         let categoryStructure = {};
@@ -3516,7 +3512,7 @@ var QRCode;
     </div>
 
     <!-- 版本标注 -->
-    <div class="version-tag">Rev 10.4</div>
+    <div class="version-tag">Rev 10.5</div>
 
     <!-- 登录页 -->
     <div id="loginPage" class="fixed inset-0 z-[9999] flex items-center justify-center" style="background:linear-gradient(135deg,#1e40af,#1e293b)">
