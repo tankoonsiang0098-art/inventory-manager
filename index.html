@@ -2464,6 +2464,19 @@ var QRCode;
             }
         }
 
+        // 根据主表单资讯建立一条采购记录（新增物品首条 / 编辑时补建首条共用）
+        function buildAutoPurchase(itemData) {
+            return {
+                id: 'pur_' + Date.now(),
+                date: itemData.date || '',
+                vendor: itemData.vendor || '',
+                price: itemData.price,
+                quantity: itemData.quantity || 1,
+                unit: itemData.unit || '个',
+                remarks: ''
+            };
+        }
+
         function doSaveItem(id, itemCode) {
             let mainCategory = isNewMainCat
                 ? document.getElementById('itemMainCatInput').value.trim()
@@ -2517,16 +2530,26 @@ var QRCode;
             if (!id) {
                 const hasInfo = itemData.vendor || itemData.price !== null || itemData.date;
                 if (hasInfo) {
-                    itemData.purchases = [{
-                        id: 'pur_' + Date.now(),
-                        date: itemData.date || '',
-                        vendor: itemData.vendor || '',
-                        price: itemData.price,
-                        quantity: itemData.quantity || 1,
-                        unit: itemData.unit || '个',
-                        remarks: ''
-                    }];
+                    itemData.purchases = [buildAutoPurchase(itemData)];
                 }
+            } else if (itemData.purchases.length === 0) {
+                // 编辑时若从未有过采购记录，沿用同一逻辑补建首条（不无中生有：只在主表单有采购资讯时才建）
+                const hasInfo = itemData.vendor || itemData.price !== null || itemData.date;
+                if (hasInfo) {
+                    itemData.purchases = [buildAutoPurchase(itemData)];
+                }
+            } else {
+                // 编辑主表单：把 price/quantity/unit/vendor/date 的改动同步回"最新一条"采购记录
+                const sorted = itemData.purchases.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                const latestId = sorted[0].id;
+                itemData.purchases = itemData.purchases.map(p => p.id !== latestId ? p : {
+                    ...p,
+                    date: itemData.date || '',
+                    vendor: itemData.vendor || '',
+                    price: itemData.price,
+                    quantity: itemData.quantity || 1,
+                    unit: itemData.unit || '个'
+                });
             }
 
             const promise = id
@@ -3356,8 +3379,9 @@ var QRCode;
                 const priced = purchases.filter(p => p.price != null && p.price !== '');
                 let lowestHtml = '';
                 if (priced.length > 0) {
-                    const minEntry = priced.reduce((a, b) => parseFloat(a.price) <= parseFloat(b.price) ? a : b);
-                    lowestHtml = `<p class="text-amber-700">💰 最低价：RM ${parseFloat(minEntry.price).toFixed(2)}（${minEntry.vendor || '—'}）</p>`;
+                    const minEntry = priced.reduce((a, b) => computeUnitPrice(a.price, a.quantity) <= computeUnitPrice(b.price, b.quantity) ? a : b);
+                    const minUnitPrice = computeUnitPrice(minEntry.price, minEntry.quantity);
+                    lowestHtml = `<p class="text-amber-700">💰 最低单价：RM ${minUnitPrice.toFixed(2)} / ${minEntry.unit || '个'}（${minEntry.vendor || '—'}）</p>`;
                 }
                 const latestDate = purchases[0].date || '—';
                 statsHtml = `
@@ -3450,7 +3474,9 @@ var QRCode;
                 purchases,
                 date: latest.date || item.date || '',
                 vendor: latest.vendor || item.vendor || '',
-                price: latest.price !== null && latest.price !== undefined ? latest.price : item.price
+                price: latest.price !== null && latest.price !== undefined ? latest.price : item.price,
+                quantity: (latest.quantity !== null && latest.quantity !== undefined && latest.quantity !== '') ? latest.quantity : (item.quantity || 1),
+                unit: latest.unit || item.unit || '个'
             };
 
             db.collection('items').doc(itemId).update(syncFields)
@@ -3459,6 +3485,8 @@ var QRCode;
                     item.date = syncFields.date;
                     item.vendor = syncFields.vendor;
                     item.price = syncFields.price;
+                    item.quantity = syncFields.quantity;
+                    item.unit = syncFields.unit;
                     closePurchaseForm();
                     openItemDetailModal(item);
                     showToast('采购记录已添加 ✓');
@@ -3828,7 +3856,7 @@ var QRCode;
     </div>
 
     <!-- 版本标注 -->
-    <div class="version-tag">Rev 10.7</div>
+    <div class="version-tag">Rev 10.9</div>
 
     <!-- 登录页 -->
     <div id="loginPage" class="fixed inset-0 z-[9999] flex items-center justify-center" style="background:linear-gradient(135deg,#1e40af,#1e293b)">
